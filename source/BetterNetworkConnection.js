@@ -1,5 +1,5 @@
 import {BetterDataView} from '../../better-data-view/source/BetterDataView.js'
-import {Mutex} from '../../await-mutex/source/AwaitMutex.js'
+import Mutex from '../../await-mutex/source/AwaitMutex.js'
 
 function mandatory(msg='') {throw new Error('Missing parameter! '+msg)}
 
@@ -186,14 +186,23 @@ class BNC {
     }
   }
   
-  async reply({command = mandatory(), messageId = mandatory(), status = mandatory(), data, errorMessage}) {
+  async reply({replyTo, command, messageId, status = mandatory(), data, errorMessage}) {
+    if (replyTo) {
+      command = replyTo.command
+      messageId = replyTo.id
+    } else {
+      command || mandatory('replyTo or command in reply()')
+      messageId || mandatory('replyTo or messageId in reply()')
+    }
     this._debug('reply:', command, status, data)
     if (data) {
-      if (!(status in this._protocol[command])) { // if there isn't a object template defined for this kind of reply
+      //if (!(status in this._protocol[command])) { // if there isn't a object template defined for this kind of reply
+      if (!this._protocol[command][status]) {
         throw Error('No data template defined in the protocol for a "'+status+'" reply to the "'+command+'" command.')
       }
     } else {
-      if (status in this._protocol[command]) {
+      //if (status in this._protocol[command]) {
+      if (this._protocol[command][status]) {
         throw Error('The template defined in the protocol for a "'+status+'" reply to the "'+command+'" command requires data to follow it.')
       }
     }
@@ -281,7 +290,8 @@ class BNC {
             if (replyStatus == 'error') { // server reported error
               data = dataIn.s()//{message = dataIn.s()}
               console.warn('Server reported error:', data)//.message)
-            } else if (replyStatus in this._protocol[commandRepliedTo]) { // if there is a object template defined for this kind of reply
+            //} else if (replyStatus in this._protocol[commandRepliedTo]) { // if there is a object template defined for this kind of reply
+            } else if (this._protocol[commandRepliedTo][replyStatus]) {
               try {
                 data = dataIn.readObject(this._protocol[commandRepliedTo][replyStatus]) // then use it
               } catch (e) { // if data is malformed it fails
