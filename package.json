@@ -1,0 +1,22 @@
+{
+  "type": "module",
+  "files": ["source/*"],
+  "module": "source/BetterNetworkConnection.js",
+  "main": "source/BetterNetworkConnection.js",
+  "name": "better-network-connection",
+  "version": "1.0.0",
+  "author": "Joakim L. Christiansen / JLC / JoakimCh",
+  "license": "GPL-3.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JoakimCh/better-network-connection.git"
+  },
+  "description": "A class for sending and receiving data easily over a WebSocket.",
+  "keywords": [
+    ""
+  ],
+  "dependencies": {
+    "better-data-view": "github:JoakimCh/better-data-view#master",
+    "await-mutex": "github:JoakimCh/await-mutex#master"
+  }
+}
