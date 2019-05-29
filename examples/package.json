@@ -1,0 +1,9 @@
+{
+  "type": "module",
+  "dependencies": {
+    "ws": "7",
+    "smart-static-server": "joakimch/smart-static-server#master",
+    "better-network-connection": "joakimch/better-network-connection#master",
+    "get-random-values": "1"
+  }
+}
