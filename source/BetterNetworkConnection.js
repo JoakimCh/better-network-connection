@@ -17,36 +17,38 @@ class BNC {
     closedConnectionCallback, // called at closed connection: (client, reason)
     getRandomValuesFunction = crypto.getRandomValues.bind(crypto), // in the future: globalThis.crypto (when NodeJS has support for it)  // https://stackoverflow.com/questions/10743596/why-are-certain-function-calls-termed-illegal-invocations-in-javascript
     mySessionKey, // used when you want to identify yourself with a key the peer remembers
-    mySessionKeyCallback, // called when you have been given a session key
+    connectionReadyCallback, //mySessionKeyCallback, // called when you have been given a session key
     ipAddress,
     debug = false // true for debug messages
   }) {
     if (debug) {
       this._debug = (...args) => {console.log(...args)}
     } else {
-      this._debug = ()=>{} // I guess this will be optimized away
+      this._debug = ()=>{} // Calls to this should be optimized away by the JavaScript engine?
     }
     this._initializeProtocol(protocol)
     this._replyCallbacks = new Map()
-    this._sessionKey // the session key used to identify the other side //new Uint8Array(8), let it be null to indicate not initialized yet
+    this._sessionKey // the session key used to identify the other side
     this._mySessionKey // the session key given to you by the other side
-    //this.id = BNC._nextId++ // gets the value of nextId and then increments it
     this._msgId = 1 // current msgId added to messages so replies to it can be tracked
     this._commandCallback = incomingMessageCallback
     this._closedConnectionCallback = closedConnectionCallback
     this._getRandomValuesFunction = getRandomValuesFunction
-    this._mySessionKeyCallback = mySessionKeyCallback
-    this._ws = webSocket//new WebSocket('ws://localhost:8080')
+    this._connectionReadyCallback = connectionReadyCallback //this._mySessionKeyCallback = mySessionKeyCallback
+    this._ws = webSocket
     this._ws.binaryType = 'arraybuffer'
-    this._ws.addEventListener('message', this._onMessage.bind(this))//(event) => {
-    this._ws.addEventListener('close', this._onClose.bind(this))//(event) => {
+    this._ws.addEventListener('message', this._onMessage.bind(this))
+    this._ws.addEventListener('close', this._onClose.bind(this))
     this._ipAddress = ipAddress || 'UNKNOWN_IP'
     
     let onOpen = (() => {
-      //this._debug('onOpen')
-      if (mySessionKey) { // todo: type check
-        this._mySessionKey = mySessionKey
-        this._sendSessionKey()
+      if (mySessionKey) {
+        if (mySessionKey instanceof Uint8Array && mySessionKey.length == 8) { // that's a 64bit key
+          this._mySessionKey = mySessionKey
+          this._sendSessionKey()
+        } else {
+          throw Error('mySessionKey given, but is not a Uint8Array with 8 bytes')
+        }
       } else {
         this._requestSessionKey()
       }
@@ -56,8 +58,8 @@ class BNC {
       this._ws.addEventListener('open', onOpen)
     } else if (this._ws.readyState == this._ws.OPEN) {
       onOpen()
-    } else { // todo: error message
-      
+    } else {
+      throw Error('Is the WebSocket closed? A ws.readyState like this is not accepted:', ws.readyState)
     }
 
   }
@@ -80,7 +82,8 @@ class BNC {
         _internal_session_key: {
           data: {
             sessionKey: 'u8,8'
-          }
+          },
+          success: null
         },
         // the user defined protocol
         ...protocol
@@ -120,8 +123,19 @@ class BNC {
     return this._msgId
   }
   
-  get sessionKey() {
+  get sessionKey() { // that's the session key the peer has
     return this._sessionKey
+  }
+
+  _callReadyCallbackIfReady() {
+    if (this._sessionKey && this._mySessionKey) {
+      if (typeof this._connectionReadyCallback == 'function') {
+        this._connectionReadyCallback({
+          mySessionKey: this._mySessionKey,
+          hisSessionKey: this._sessionKey
+        })
+      }
+    }
   }
   
   _replyCallback(msgId, command, callback) { // returns a Promise if callback not set
@@ -238,14 +252,19 @@ class BNC {
       dataOut_unlock()
     }
   }
+
+  close(code, reason) {
+    this._ws.close(code, reason)
+  }
   
   _requestSessionKey() {
     this.send('_internal_session_requestKey', null, reply => {
       if (reply.status == 'success') {
         this._mySessionKey = new Uint8Array(reply.sessionKey)
-        if (typeof this._mySessionKeyCallback == 'function') {
-          this._mySessionKeyCallback(this._mySessionKey)
-        }
+        this._callReadyCallbackIfReady()
+        // if (typeof this._mySessionKeyCallback == 'function') {
+        //   this._mySessionKeyCallback(this._mySessionKey)
+        // }
       }
     })
   }
@@ -253,12 +272,16 @@ class BNC {
   _sendSessionKey() { // send a key and hope the peer recognizes you
     this.send('_internal_session_key', {
       sessionKey: this._mySessionKey
+    }, reply => {
+      if (reply.status == 'success') {
+        this._callReadyCallbackIfReady()
+      }
     })
   }
   
   _onClose(event) {
     if (typeof this._closedConnectionCallback == 'function' && this._sessionKey) {
-      this._closedConnectionCallback({...event, sender: this, sessionKey: this._sessionKey}) // {code, reason}
+      this._closedConnectionCallback({...event/*{code, reason}*/, sender: this, sessionKey: this._sessionKey})
     }
   }
   
@@ -311,6 +334,7 @@ class BNC {
         case '_internal_session_requestKey': { // peer wants a key generated for him
           this._sessionKey = new Uint8Array(8)
           this._getRandomValuesFunction(this._sessionKey)
+          this._callReadyCallbackIfReady()
           this.reply({
             command: '_internal_session_requestKey', 
             messageId: msgId, 
@@ -323,6 +347,12 @@ class BNC {
         
         case '_internal_session_key': { // peer already has a key he wants to use
           this._sessionKey = new Uint8Array(dataIn.readTypedArray(8))
+          this._callReadyCallbackIfReady()
+          this.reply({
+            command: '_internal_session_key', 
+            messageId: msgId, 
+            status: 'success'
+          })
         } break
         
         case undefined:
