@@ -7,6 +7,18 @@ const
   require = createRequire(import.meta.url), // now you can use require() to require whatever
   Ws = require('ws'),
   log = console.log
+function sleep(ms) {
+  return new Promise((resolve, reject) => {
+    setTimeout(resolve, ms)
+  })
+}
+function bufferToHex(buffer) { // from: https://stackoverflow.com/a/53307879/4216153
+  let result = '', h = '0123456789ABCDEF'
+  for (let byte of new Uint8Array(buffer)) {
+    result += h[byte >> 4] + h[byte & 15]
+  }
+  return result
+}
 
 const server = new SmartStaticServer({
   host: 'localhost', // only connections from same computer allowed
@@ -17,23 +29,24 @@ const server = new SmartStaticServer({
     {dir: 'node_modules', as: 'node_modules'}
   ],
   debug: false,
-  verbose: false
+  verbose: true
 })
 
 server.start()
 
 function wsHandler(ws) { // handle new websocket connections
   const client = new BetterNetworkConnection({
+    debug: true,
     getRandomValuesFunction: require('get-random-values'), // sadly Node.js dosen't care about standards
     webSocket: ws,
     ipAddress: ws._socket.remoteAddress, // for error messages, etc
     protocol: myNetworkProtocol,
     incomingMessageCallback: incomingMessages,
     closedConnectionCallback: info => {
-      log('Client with this session key has disconnected:', info.sessionKey)
+      log('Client with this session key has disconnected:', bufferToHex(info.sessionKey))
     },
     connectionReadyCallback: info => { // after session keys has been exchanged
-      log('Client connected and is identified with this session key:', info.hisSessionKey)
+      log('Client connected and is identified with this session key:', bufferToHex(info.hisSessionKey))
       // it is now safe to greet him
       client.send('chat_msg', {
         from: 'Server',
@@ -44,8 +57,7 @@ function wsHandler(ws) { // handle new websocket connections
 
 }
 
-function incomingMessages(message) {
-  log(message.command, message.data)
+async function incomingMessages(message) {
   if (message.command == 'chat_msg') {
     if (message.data.message.toLowerCase().search('fuck you') != -1) {
       message.sender.reply({
@@ -55,7 +67,8 @@ function incomingMessages(message) {
           reason: 'Profanity will not be tolerated!'
         }
       })
-      message.sender.close(1000, 'Bye bye!')
+      await sleep(1000) // for fun
+      message.sender.close(1000, 'Fuck you too!')
     } else {
       message.sender.reply({
         replyTo: message,

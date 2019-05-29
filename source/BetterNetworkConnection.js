@@ -3,6 +3,14 @@ import Mutex from '../../await-mutex/source/AwaitMutex.js'
 
 function mandatory(msg='') {throw new Error('Missing parameter! '+msg)}
 
+function bufferToHex(buffer) { // from: https://stackoverflow.com/a/53307879/4216153
+  let result = '', h = '0123456789ABCDEF'
+  for (let byte of new Uint8Array(buffer)) {
+    result += h[byte >> 4] + h[byte & 15]
+  }
+  return result
+}
+
 const replyStatus = {
   failure: 2, // the meaning is up to you
   success: 1, // the meaning is up to you
@@ -163,7 +171,9 @@ class BNC {
   }
   
   async send(command, data, replyCallback) {
-    this._debug('send:', command, data)
+    if (this._protocol[command]._commandId > this._protocol._internal_session_key._commandId) {
+      this._debug('-> message:', command, data)
+    }
     if (!(command in this._protocol)) {
       throw Error('Command "'+command+'" was not found in the provided network protocol')
     }
@@ -208,7 +218,9 @@ class BNC {
       command || mandatory('replyTo or command in reply()')
       messageId || mandatory('replyTo or messageId in reply()')
     }
-    this._debug('reply:', command, status, data)
+    if (this._protocol[command]._commandId > this._protocol._internal_session_key._commandId) {
+      this._debug('-> reply:', command, status, data)
+    }
     if (data) {
       //if (!(status in this._protocol[command])) { // if there isn't a object template defined for this kind of reply
       if (!this._protocol[command][status]) {
@@ -254,13 +266,15 @@ class BNC {
   }
 
   close(code, reason) {
+    this._debug('-> close connection, code and reason:', code, reason)
     this._ws.close(code, reason)
   }
   
   _requestSessionKey() {
     this.send('_internal_session_requestKey', null, reply => {
       if (reply.status == 'success') {
-        this._mySessionKey = new Uint8Array(reply.sessionKey)
+        this._mySessionKey = new Uint8Array(reply.data.sessionKey)
+        this._debug('-> got key:', bufferToHex(this._mySessionKey))
         this._callReadyCallbackIfReady()
         // if (typeof this._mySessionKeyCallback == 'function') {
         //   this._mySessionKeyCallback(this._mySessionKey)
@@ -270,6 +284,7 @@ class BNC {
   }
   
   _sendSessionKey() { // send a key and hope the peer recognizes you
+    this._debug('-> sending key:', bufferToHex(this._mySessionKey))
     this.send('_internal_session_key', {
       sessionKey: this._mySessionKey
     }, reply => {
@@ -280,8 +295,9 @@ class BNC {
   }
   
   _onClose(event) {
+    this._debug('<- closed connection, code and reason:', event.code, event.reason)
     if (typeof this._closedConnectionCallback == 'function' && this._sessionKey) {
-      this._closedConnectionCallback({...event/*{code, reason}*/, sender: this, sessionKey: this._sessionKey})
+      this._closedConnectionCallback({code: event.code, reason: event.reason, sender: this, sessionKey: this._sessionKey})
     }
   }
   
@@ -323,7 +339,9 @@ class BNC {
               }
             }
             if (!error) {
-              this._debug('got reply:', commandRepliedTo, replyStatus, data)
+              if (this._protocol[commandRepliedTo]._commandId > this._protocol._internal_session_key._commandId) {
+                this._debug('<- reply:', commandRepliedTo, replyStatus, data)
+              }
               this._replyCallbacks.get(msgId).callback({status: replyStatus, data})
             }
           } else {
@@ -334,6 +352,7 @@ class BNC {
         case '_internal_session_requestKey': { // peer wants a key generated for him
           this._sessionKey = new Uint8Array(8)
           this._getRandomValuesFunction(this._sessionKey)
+          this._debug('<- got key:', bufferToHex(this._sessionKey))
           this._callReadyCallbackIfReady()
           this.reply({
             command: '_internal_session_requestKey', 
@@ -347,6 +366,7 @@ class BNC {
         
         case '_internal_session_key': { // peer already has a key he wants to use
           this._sessionKey = new Uint8Array(dataIn.readTypedArray(8))
+          this._debug('<- sending key:', bufferToHex(this._sessionKey))
           this._callReadyCallbackIfReady()
           this.reply({
             command: '_internal_session_key', 
@@ -371,7 +391,7 @@ class BNC {
               }
             }
             if (!error) {
-              this._debug('message:', command, data)
+              this._debug('<- message:', command, data)
               this._commandCallback({sender: this, command, data, id: msgId})
             }
           } else {

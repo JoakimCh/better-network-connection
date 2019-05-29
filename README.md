@@ -70,15 +70,11 @@ const server = new BetterNetworkConnection({
   protocol: myNetworkProtocol,
   incomingMessageCallback: incomingMessages,
   closedConnectionCallback: closedConnection,
-  mySessionKeyCallback: gotSessionKey
+  connectionReadyCallback: connectionReady
 })
 
-function gotSessionKey(sessionKey) {
-  console.log('My session key:', sessionKey)
-}
-
 function incomingMessages(message) {
-  console.log('Message from server:', message)
+  console.log('Message from server:', message.command, message.data)
   switch (message.command) {
     case 'chat_msg': {
       let nickname = message.data.from
@@ -88,7 +84,7 @@ function incomingMessages(message) {
   }
 }
 
-function closedConnection() {
+function closedConnection(info) {
   console.log('Server closed connection')
 }
 
@@ -112,9 +108,10 @@ async function sendMessage(from, message) {
   }
 }
 
-server.webSocket.addListener('open', { // addEventListener if using browser
+function connectionReady(info) {
+  log('Connected! My session key is:', info.mySessionKey)
   sendMessage('SugarDaddy62', 'ASL?')
-})
+}
 ```
 Reply as a callback:
 ```javascript
@@ -127,7 +124,7 @@ server.send('chat_msg', {
 ```
 
 ## Todo
-- [ ] Provide better documentation and examples.
+- [ ] Provide better documentation.
 - [ ] Purge old reply callbacks (timed out replies). Using a timer called every 1 second (3 seconds = timed out or have option to set timeout).
 - [ ]  Allow to set size of out-buffer or change it dynamicly?
 

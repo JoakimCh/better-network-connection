@@ -2,21 +2,33 @@
 import {BetterNetworkConnection} from './node_modules/better-network-connection/source/BetterNetworkConnection.js'
 import {myNetworkProtocol} from './sharedProtocol.js'
 const log = console.log
+function sleep(ms) {
+  return new Promise((resolve, reject) => {
+    setTimeout(resolve, ms)
+  })
+}
+function bufferToHex(buffer) { // from: https://stackoverflow.com/a/53307879/4216153
+  let result = '', h = '0123456789ABCDEF'
+  for (let byte of new Uint8Array(buffer)) {
+    result += h[byte >> 4] + h[byte & 15]
+  }
+  return result
+}
 
 log('Connecting to server...')
 
 const server = new BetterNetworkConnection({
+  debug: true,
   webSocket: new WebSocket('ws://'+location.hostname+':'+location.port),
   protocol: myNetworkProtocol,
   incomingMessageCallback: incomingMessages,
   connectionReadyCallback: connectionReady, // after session keys has been shared
   closedConnectionCallback: info => {
-    log('The server has closed the connecton, how rude!', info.code, info.reason)
+    log('The server has closed the connecton, how rude! Code and reason:', info.code, info.reason)
   },
 })
 
 function incomingMessages(message) {
-  log("Received:", message.command, message.data)
   if (message.command == 'chat_msg') {
     server.reply({
       replyTo: message, // use this
@@ -27,27 +39,26 @@ function incomingMessages(message) {
   }
 }
 
-function connectionReady(info) {
-  log('Connected! My session key is:', info.mySessionKey)
+async function connectionReady(info) {
+  log('Connected! My session key is:', bufferToHex(info.mySessionKey))
+  await sleep(1000) // for fun
   // send our first message
-  let data = {
+  server.send('chat_msg', {
     from: 'Client',
     message: 'Hello you! ♥'
-  }
-  let dataBeforeCallback = Object.assign({}, data) // copies it
-  server.send('chat_msg', data, reply => {
+  }, reply => {
     if (reply.status == 'success') {
-      console.log('Server successfully received your message:', dataBeforeCallback)
+      log('Server successfully received my message!')
     }
   })
+  await sleep(1000) // for fun
   // send our second message
-  data = {
+  let reply = await server.send('chat_msg', {
     from: 'Client',
     message: 'Fuck you!'
-  }
-  let reply = await server.send('chat_msg', data)
+  })
   if (reply.status == 'failure') {
-    console.log('Server didn\'t like your message:', data)
-    console.log('Reason:', reply.data.reason)
+    log('Server didn\'t like my message :(')
+    log('Reason:', reply.data.reason)
   }
-})
+}
