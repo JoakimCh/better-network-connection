@@ -16,7 +16,7 @@
     ""
   ],
   "dependencies": {
-    "better-data-view": "github:JoakimCh/better-data-view#master",
-    "await-mutex": "github:JoakimCh/await-mutex#master"
+    "better-data-view": "github:JoakimCh/better-data-view#1.0.0",
+    "await-mutex": "github:JoakimCh/await-mutex#1.0.3"
   }
 }
